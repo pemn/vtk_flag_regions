@@ -15,10 +15,10 @@ display||show the meshes in a 3d window
 ## 📓 Notes
 ### Grid schema format
 Instead of a block model file you can input a grid schema string with the syntax:  
-`<xlength>,<ylength>,<zlength>,<rotation in cartesian degrees>`
+`<xlength>,<ylength>,<zlength>;<rotation in cartesian degrees>`
 Ex.:
  * `50,50,50` blocks of 50 meters with no rotation
- * `10,10,10,45` blocks of 10 with a 45 degree rotation  
+ * `10,10,10;45` blocks of 10 with a 45 degree rotation  
 
 ## 📚 Examples
 ![screenshot2](https://github.com/pemn/assets/blob/main/vtk_flag_regions2.jpg?raw=true)  
