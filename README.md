@@ -3,16 +3,16 @@ flag solid regions in a block model. export points inside solids.
 does not require vulcan or any other proprietary software  
 ## 📸 Screenshot
 ![screenshot1](/pemn/assets/vtk_flag_regions1.png)  
-![[screenshot1]](/pemn/assets/vtk_flag_regions1.png)  
-[[[/pemn/assets/vtk_flag_regions1.png]]]  
-[[/pemn/assets/vtk_flag_regions1.png]]
-[[https://github.com/pemn/assets/blob/main/vtk_flag_regions1.png]]  
-[[/pemn/assets/blob/main/vtk_flag_regions1.png]]  
-[[../assets/blob/main/vtk_flag_regions1.png]]  
-[[../assets/vtk_flag_regions1.png]]  
-[[../assets/vtk_flag_regions1.png]]  
+![screenshot1](/pemn/assets/vtk_flag_regions1.png)  
+![screenshot1](/pemn/assets/blob/main/vtk_flag_regions1.png)  
+![screenshot1](/../../assets/blob/main/vtk_flag_regions1.png)  
 ![screenshot1](../assets/blob/main/vtk_flag_regions1.png)  
-![[screenshot1]](../assets/blob/main/vtk_flag_regions1.png)  
+![screenshot1](../../assets/blob/main/vtk_flag_regions1.png)  
+![screenshot1](/../assets/blob/main/vtk_flag_regions1.png)  
+![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions1.png)  
+![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions1.png?raw=true)  
+![screenshot1](https://github.com/pemn/assets/vtk_flag_regions1.png)  
+![screenshot1](https://github.com/pemn/assets/vtk_flag_regions1.png?raw=true)  
 
 ## 📝 Parameters
 |Name|optional|description|
