@@ -6,7 +6,7 @@ Does not require vulcan or any other proprietary software.
 ## 📝 Parameters
 |Name|optional|description|
 |---|---|---------|
-block_model||input block model in vtk or csv format<br/>Also accepts a generic grid schema, as detailed in notes.
+block_model||input block model in vtk or csv format<br/>Also accepts a generic grid schema string, as detailed in notes.
 regions||closed meshes which will flag the blocks inside
 flag_var||field that will be create with the region name in each block
 flag2d||instead of using meshes as 3d volumes consider only the 2d footprint
