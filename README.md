@@ -2,7 +2,7 @@
 flag solid regions in a block model. export points inside solids.  
 does not require vulcan or any other proprietary software  
 ## 📸 Screenshot
-![screenshot1](../assets/vtk_flag_regions1.png)
+![screenshot1](../assets/vtk_flag_regions1.png?raw=true)
 ## 📝 Parameters
 |Name|optional|description|
 |---|---|---------|
