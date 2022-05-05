@@ -14,7 +14,7 @@ output||path to save the modified block model
 display||show the meshes in a 3d window
 ## 📓 Notes
 ### Grid schema format
-Instead of a block model you can use a grid schema with the syntax:  
+Instead of a block model file you can input a grid schema string with the syntax:  
 `<xlength>,<ylength>,<zlength>,<rotation in cartesian degrees>`
 Ex.:
  * `50,50,50` blocks of 50 meters with no rotation
