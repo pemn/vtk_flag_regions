@@ -2,18 +2,7 @@
 flag solid regions in a block model. export points inside solids.  
 does not require vulcan or any other proprietary software  
 ## 📸 Screenshot
-![screenshot1](/pemn/assets/vtk_flag_regions1.png)  
-![screenshot1](/pemn/assets/vtk_flag_regions1.png)  
-![screenshot1](/pemn/assets/blob/main/vtk_flag_regions1.png)  
-![screenshot1](/../../assets/blob/main/vtk_flag_regions1.png)  
-![screenshot1](../assets/blob/main/vtk_flag_regions1.png)  
-![screenshot1](../../assets/blob/main/vtk_flag_regions1.png)  
-![screenshot1](/../assets/blob/main/vtk_flag_regions1.png)  
-![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions1.png)  
 ![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions1.png?raw=true)  
-![screenshot1](https://github.com/pemn/assets/vtk_flag_regions1.png)  
-![screenshot1](https://github.com/pemn/assets/vtk_flag_regions1.png?raw=true)  
-
 ## 📝 Parameters
 |Name|optional|description|
 |---|---|---------|
@@ -27,5 +16,6 @@ output||path to save the modified block model
 display||show the meshes in a 3d window
 ## 📓 Notes
 ## 📚 Examples
+![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions2.png?raw=true)  
 ## 💎 License
 Apache 2.0
