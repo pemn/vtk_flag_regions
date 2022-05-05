@@ -21,6 +21,6 @@ Ex.:
  * `10,10,10,45` blocks of 10 with a 45 degree rotation  
 
 ## 📚 Examples
-![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions2.png?raw=true)  
+![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions2.jpg?raw=true)  
 ## 💎 License
 Apache 2.0
