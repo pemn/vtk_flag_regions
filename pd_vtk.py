@@ -14,10 +14,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+import sys, os, re, logging
 import numpy as np
 import pandas as pd
-import re, sys, os
-import logging
+import pyvista as pv
+
 logging.basicConfig(format='%(message)s', level=99)
 log = lambda *argv: logging.log(99, ' '.join(map(str,argv)))
 
@@ -26,17 +27,16 @@ log = lambda *argv: logging.log(99, ' '.join(map(str,argv)))
 # pyd_path = os.environ['TEMP'] + "/pyz_" + platform_arch
 # sys.path.insert(0, pyd_path)
 
-try:
-  import pyvista as pv
-except:
-  # we use this base class in enviroments that dont support VTK
-  class pv(object):
-    class StructuredGrid(object):
-      pass
-    class UniformGrid(object):
-      pass
-    def read(*argv):
-      pass
+# try:
+# except:
+#   # we use this base class in enviroments that dont support VTK
+#   class pv(object):
+#     class StructuredGrid(object):
+#       pass
+#     class UniformGrid(object):
+#       pass
+#     def read(*argv):
+#       pass
     
 ''' GetDataObjectType
 PolyData == 0
@@ -75,9 +75,9 @@ def pv_read(fp):
   elif re.search(r'vt(k|p|m)$', fp, re.IGNORECASE):
     mesh = pv.read(fp)
     import skimage.io
-    for name in mesh.field_arrays:
+    for name in mesh.field_data:
       if len(name) == 1:
-        v = mesh.field_arrays[name]
+        v = mesh.field_data[name]
         mesh.textures[int(name)] = pv.Texture(np.reshape(v, (v.shape[0],-1,3)))
 
   else:
@@ -85,6 +85,12 @@ def pv_read(fp):
     df = pd_load_dataframe(fp)
     mesh = vtk_df_to_mesh(df)
   return mesh
+
+def pv_save_split(meshes, fp):
+  output_name, output_ext = os.path.splitext(fp)
+  for i in range(len(meshes)):
+    pv_save(meshes[i], '%s_%d%s' % (output_name, i, output_ext))
+
 
 def pv_save(meshes, fp, binary=True):
   ''' simple import safe pyvista writer '''
@@ -126,7 +132,6 @@ def pv_save(meshes, fp, binary=True):
     mesh = meshes[0]
     if len(meshes) > 1:
       mesh = pv.MultiBlock(meshes)
-    
     mesh.save(fp, binary)
 
 def vtk_cells_to_flat(cells):
@@ -140,20 +145,22 @@ def vtk_cells_to_flat(cells):
   return np.asarray(r), n
 
 def vtk_flat_quads_to_triangles(quads, n = 4):
-  faces = []
+  f = []
   for i in range(0, len(quads), n):
-    faces.extend(quads[i : i + n // 2 + 1])
-    faces.extend(quads[i + n // 2 : i + n])
-    faces.append(quads[i])
-  return faces
+    for j in range(0, n, 4):
+      k = i + j
+      f.extend(quads[k : k + 3])
+      f.extend(quads[k + 2 : k + 4])
+      f.append(quads[k])
+  return f
 
 def vtk_cells_to_faces(cells):
-  faces, n = vtk_cells_to_flat(cells)
+  f, n = vtk_cells_to_flat(cells)
   if n is None:
-    return faces
+    return f
   if n % 4 == 0:
-    faces = vtk_flat_quads_to_triangles(faces, n)
-  return np.reshape(faces, (len(faces) // 3, 3))
+    f = vtk_flat_quads_to_triangles(f, n)
+  return np.reshape(f, (len(f) // 3, 3))
 
 def vtk_flat_to_cells(flat, nodes = None):
   if nodes is None:
@@ -168,30 +175,13 @@ def vtk_flat_to_cells(flat, nodes = None):
       n = 0
   return np.array(cells)
 
-def pd_detect_xyz(df, z = True):
-  xyz = None
-  dfcs = set(df.columns)
-  for s in [['x','y','z'], ['midx','midy','midz'], ['mid_x','mid_y','mid_z'], ['xworld','yworld','zworld'], ['xcentre','ycentre','zcentre'], ['xc','yc','zc']]:
-    if z == False:
-      s.pop()
-    for c in [str.lower, str.upper,str.capitalize]:
-      cs = list(map(c, s))
-      if dfcs.issuperset(cs):
-        xyz = cs
-        break
-    else:
-      continue
-    # break also the outter loop if the inner loop broke
-    break
-  if xyz is None and z:
-    return pd_detect_xyz(df, False)
-  return xyz
-
 def pd_detect_cell_size(df, xyz = None, xyzl = None):
   if xyz is None:
+    from _gui import pd_detect_xyz
     xyz = pd_detect_xyz(df)
   if xyzl is None:
     xyzl = ['xlength', 'ylength', 'zlength']
+  cell_size = None
   if set(xyzl).issubset(df):
     cell_size = df[xyzl].dropna().min().values
     if np.min(cell_size) <= 0:
@@ -210,42 +200,10 @@ def pd_detect_cell_size(df, xyz = None, xyzl = None):
 
 def getRectangleRotation(rect):
   r = 0
-  #d = np.subtract(rect[0], rect[3])
-  # x0y1 - x0y0
   d = np.subtract(rect[1], rect[0])
-  print(d)
   if np.any(d):
     r = np.rad2deg(np.arctan(d[0]/d[1]))
   return r
-
-def getRectangleSchema(rect, cell_size):
-  dims = None
-  origin = rect[0]
-  bearing = 0
-  o_n = None
-  for i in range(len(rect)):
-    if o_n is None or np.linalg.norm(rect[i]) < np.linalg.norm(rect[o_n]):
-      o_n = i
-  #o_s = 0
-  dims = np.ones(2)
-  # [n,n-1] , [n,n+1]
-  d_s = []
-  for k in [-1,+1]:
-    d = 0
-    s = 0
-    n = o_n
-    while d <= 0.001:
-      n += k
-      s = np.subtract(rect[o_n], rect[n])
-      d = np.linalg.norm(s)
-    d_s.append(d)
-    print("i",i,"n",n,"o_n",o_n)
-    # use last s
-    o_s = s
-  
-  dims = np.ceil(np.asarray(d_s) / cell_size[:2])
-  bearing = np.rad2deg(np.arctan(o_s[0]/o_s[1]))
-  return rect[o_n], dims, bearing
 
 def add_polygon_patch(coords, ax, fc = None):
   import matplotlib.patches as patches
@@ -263,20 +221,9 @@ def plt_polygon(p, ax = None):
   ax.axis('equal')
   plt.show()
 
-def pd_detect_rr(df, xyz = None):
-  if xyz is None:
-    xyz = pd_detect_xyz(df)
-  from shapely.geometry import MultiPoint, Polygon
-
-  pxyz = df.drop_duplicates(xyz[:2])
-  pxyz = pxyz[xyz[:2]].values
-  p2d = MultiPoint(pxyz)
-  mrr = p2d.minimum_rotated_rectangle
-  #return getRectangleRotation(mrr.exterior.coords)
-  return mrr.exterior.coords
-
 def vtk_faces_to_cells(faces):
-  return np.hstack(np.concatenate((np.full((len(faces), 1), 3, dtype=np.int_), faces), 1))
+  if faces:
+    return np.hstack(np.concatenate((np.full((len(faces), 1), 3, dtype=np.int_), faces), 1))
 
 def vtk_nf_to_mesh(nodes, faces):
   if len(nodes) == 0:
@@ -286,9 +233,10 @@ def vtk_nf_to_mesh(nodes, faces):
   #meshfaces = np.hstack(np.concatenate((np.full((len(faces), 1), 3, dtype=np.int_), faces), 1))
   return pv.PolyData(np.array(nodes), vtk_faces_to_cells(faces))
 
-def vtk_df_to_mesh(df, xyz = None):
+def vtk_df_to_mesh(df, xyz = None, dropna = False):
   # if pv is None: return
   if xyz is None:
+    from _gui import pd_detect_xyz
     xyz = pd_detect_xyz(df)
   if xyz is None:
     log('geometry/xyz information not found')
@@ -304,9 +252,10 @@ def vtk_df_to_mesh(df, xyz = None):
         log('using 0 as Z value')
         df['z'] = 0
 
-  #pdata = df[xyz].dropna(0, 'all')
-  #pdata.fillna(0, inplace=True)
   pdata = df[xyz]
+  if dropna:
+    pdata = pdata.dropna()
+  # TODO: fix NaN without drop
 
   if 'n' in df and df['n'].max() > 0:
     if 'node' in df:
@@ -371,7 +320,6 @@ def vtk_plot_meshes(meshes, point_labels=False, cmap = None, scalars = None):
   if isinstance(cmap, str):
     import matplotlib.cm
     cmap = matplotlib.cm.get_cmap(cmap)
-
   c = 0
   if not hasattr(meshes, '__len__'):
     meshes = [meshes]
@@ -379,23 +327,37 @@ def vtk_plot_meshes(meshes, point_labels=False, cmap = None, scalars = None):
     mesh = meshes[i]
     if mesh is not None and mesh.n_points:
       # fix corner case of error when the plotter cant find a active scalar
+      color = None
       if mesh.active_scalars is None:
         for array_name in mesh.array_names:
           arr = mesh.get_array(array_name)
           if arr.dtype.num < 17:
             mesh.set_active_scalars(array_name)
             break
-      color = None
-      if cmap is not None:
-        color = cmap(i/max(1,len(meshes)-1))
-      if mesh.GetDataObjectType() in [2,6]:
-        p.add_mesh(mesh.slice_orthogonal(), opacity=0.5, scalars=scalars)
-      elif len(mesh.textures):
+        else:
+          if cmap is not None:
+            color = cmap(i/max(1,len(meshes)-1))
+      mesh_scalars = None
+      if scalars and scalars in mesh.array_names:
+          mesh_scalars = scalars
+      if len(mesh.textures):
         p.add_mesh(mesh, color=None)
+      elif mesh.GetDataObjectType() in [2,6]:
+        if scalars is not None:
+          mesh_scalars = scalars
+        # fix object dtype crash
+        if mesh_scalars is not None and mesh.get_array(mesh_scalars).dtype.num >= 17:
+          mesh_scalars = None
+        p.add_mesh(mesh.slice_orthogonal(), opacity=0.5, scalars=mesh_scalars)
+      elif mesh_scalars:
+        p.add_mesh(mesh, opacity=0.5, scalars=mesh_scalars)
       else:
-        p.add_mesh(mesh, opacity=0.5, color=color, scalars=scalars)
+        p.add_mesh(mesh, opacity=0.5, color=color)
 
-      if point_labels:
+      if isinstance(point_labels, list):
+        if i < len(point_labels):
+          p.add_point_labels([mesh.center], [point_labels[i]])
+      elif point_labels:
         p.add_point_labels(mesh.points, np.arange(mesh.n_points))
       c += 1
   if c:
@@ -429,7 +391,10 @@ def vtk_mesh_to_df(mesh, face_size = None, xyz = ['x','y','z'], n0 = 0):
       points = mesh.cell_centers().points
       arr_n = np.zeros(mesh.n_cells, dtype=np.int_)
       arr_node = np.arange(mesh.n_cells, dtype=np.int_)
-      arr_data = [pd.Series(mesh.get_array(name), name=name) for name in mesh.cell_arrays]
+      # data somehow is in point arrays instead of cell arrays
+      if len(mesh.cell_data) == 0 and len(mesh.point_data) > 0 and mesh.n_points:
+        mesh = mesh.ptc()
+      arr_data = [pd.Series(mesh.get_array(name), name=name) for name in mesh.cell_data]
     else:
       arr_data = []
       # in some cases, n_faces may be > 0  but with a empty faces array
@@ -438,30 +403,31 @@ def vtk_mesh_to_df(mesh, face_size = None, xyz = ['x','y','z'], n0 = 0):
         if face_size is None:
           faces, face_size = vtk_cells_to_flat(mesh.faces)
         else:
-        #elif face_size < int(faces[0]):
+          #elif face_size < int(faces[0]):
           faces = vtk_cells_to_faces(mesh.faces)
 
         points = mesh.points.take(faces.flat, 0)
-        #arr_n = np.tile(np.arange(face_size, dtype=np.int_), len(points) // face_size)
         # TODO: tile is rounding down, need better N generator
         arr_n = np.zeros(len(points), dtype=np.int_)
         for d in range(1, face_size):
           arr_n[d::face_size] += d
-        arr_node = np.arange(mesh.n_faces, dtype=np.int_).take(faces.flat)
-        #print(arr_node)
-        for name in mesh.point_data:
+        
+        arr_node = np.arange(mesh.n_points, dtype=np.int_).take(faces.flat)
+        for name in mesh.array_names:
+          #print(name, mesh.get_array_association(name))
           arr_data.append(pd.Series(mesh.get_array(name).take(faces.flat), name=name))
       else:
         points = mesh.points
         arr_n = np.zeros(mesh.n_points, dtype=np.int_)
         arr_node = np.arange(mesh.n_points, dtype=np.int_)
-        arr_data = [pd.Series(mesh.get_array(name), name=name) for name in mesh.point_data if np.ndim(mesh.get_array(name)) == 1]
+        arr_data = [pd.Series(mesh.get_array(name), name=name) for name in mesh.array_names if np.ndim(mesh.get_array(name)) == 1]
 
     df = pd.concat([pd.DataFrame(points, columns=xyz), pd.Series(arr_n, name='n'), pd.Series(np.add(arr_node, n0), name='node')] + arr_data, 1)
   return df
 
 def vtk_mesh_info(mesh):
   print(mesh)
+
   #.IsA('vtkMultiBlockDataSet'):
   if hasattr(mesh, 'n_blocks'):
     for n in range(mesh.n_blocks):
@@ -482,7 +448,10 @@ def vtk_mesh_info(mesh):
           d = np.unique(arr)
         else:
           d = '{%f <=> %f}' % mesh.get_data_range(name, preference)
-        print(name,preference,arr.dtype.name,d,len(arr))
+        active = '•'
+        if name == mesh.active_scalars_name:
+          active = '×'
+        print(active, name,preference,arr.dtype.name,d,len(arr))
     print('')
   return mesh
 
@@ -500,7 +469,38 @@ def vtk_array_string_to_index(mesh):
       mesh.point_data[name] = pd.factorize(arr)[0]
   return mesh
 
+def mesh_rotate_0261(mesh, bearing, origin, axis = 'z'):
+  r = - (bearing - 90)
+  log("grid bearing: %.2f (%.f°)" % (bearing,r))
+
+  if pv.__version__ == '0.26.1':
+    mesh.translate(np.multiply(origin,-1))
+    if axis == 'x':
+      mesh.rotate_x(r)
+    if axis == 'y':
+      mesh.rotate_y(r)
+    if axis == 'z':
+      mesh.rotate_z(r)
+    mesh.translate(origin)
+  else:
+    if axis == 'x':
+      mesh.rotate_x(r, origin)
+    if axis == 'y':
+      mesh.rotate_y(r, origin)
+    if axis == 'z':
+      mesh.rotate_z(r, origin)
+  return mesh
+
+
 class vtk_Voxel_(object):
+  @classmethod
+  def cls_init(cls, dims, cell_size, origin):
+    if sys.hexversion > 0x3070000:
+      # handle breaking changes in pv.UniformGrid constructor
+      return cls(dimensions=dims, spacing=cell_size, origin=origin)
+    else:
+      return cls(dims, cell_size, origin)
+
   @classmethod
   def from_file_vtk(cls, *args):
     data = pv.read(args[0])
@@ -516,6 +516,7 @@ class vtk_Voxel_(object):
     else:
       self = data  
     #self.deep_copy(data)
+    #self.cells_volume('volume')
     return self
 
   @classmethod
@@ -526,77 +527,90 @@ class vtk_Voxel_(object):
       n_schema = int(n_schema)
 
     size = np.resize(bm.model_schema_size(n_schema), 3)
-    dims = bm.model_schema_dimensions(n_schema)
+    dims = np.add(1, np.asarray(bm.model_schema_dimensions(n_schema), np.int_))
+    #dims += 1
+    #np.add(dims, 1, dtype = np.int_, casting = 'unsafe').tolist()
     o0 = bm.model_schema_extent(n_schema)
     origin = np.add(bm.model_origin(), o0[:3])
-
-    self = cls(np.add(dims, 1, dtype = np.int_, casting = 'unsafe').tolist(), size, origin[:3])
-
+    self = cls(dims, size, origin[:3])
+    #print(cls(dims=(10,10,10)))
     bearing, dip, plunge = bm.model_orientation()
-    if abs(bearing - 90) > 0.01:
-      # convert bearing to carthesian angle: A = -(B - 90)
-      self = self.rotate_z_origin(bearing, origin)
+    
+    # convert bearing to carthesian angle: A = -(B - 90)
+    self = self.rotate_z_origin(bearing, origin)
     # store the raw rotation parameters as metadata
-    self.field_arrays['orientation'] = [bearing, dip, plunge]
-    self.field_arrays['origin'] = origin
-    self.field_arrays['size'] = size
+    self.field_data['_dimensions'] = dims
+    self.field_data['_size'] = size
+    self.field_data['_origin'] = origin
+    self.field_data['_orientation'] = [bearing, dip, plunge]
     
     return self
 
   def rotate_z_origin(self, bearing, point):
-    r = - (bearing - 90)
-    log("grid bearing: %.2f (%.f°)" % (bearing,r))
-    self = vtk_VoxelSG(self.cast_to_structured_grid())
-    # pyvista 26.1, last working for python 3.5
-    # does not allow the rotation point
-    if pv.__version__ == '0.26.1':
-      self.translate(point * -1)
-      self.rotate_z(r)
-      self.translate(point)
-    else:
-      self.rotate_z(r, point)
+    if abs(bearing - 90) > 0.01:
+      self = vtk_VoxelSG(self.cast_to_structured_grid())
+      # pyvista 26.0, last working for python 3.5
+      # does not allow the rotation point
+      mesh_rotate_0261(self, bearing, point)
+
     return self
 
   @classmethod
   def from_bb(cls, bb, cell_size = None, ndim = 3):
-    dims = np.add(np.ceil(np.divide(np.subtract(bb[1], bb[0]), cell_size)), 2)
+    dims = np.add(np.ceil(np.divide(np.subtract(bb[1], bb[0]), cell_size)), 5)
 
     if cell_size is None:
       cell_size = np.full(3, 10, dtype=np.int_)
     elif np.ndim(cell_size) == 0:
       cell_size = np.full(3, float(cell_size), dtype=np.int_)
 
-    origin = np.subtract(bb[0], cell_size)
+    origin = np.subtract(bb[0], cell_size * 2)
     if ndim == 2:
       dims[2] = 1
       origin[2] = 0
-    return cls(dims.astype(np.int_).tolist(), cell_size, origin)
+    dims = dims.astype(np.int_).tolist()
+    # if sys.hexversion > 0x3070000:
+    #   # handle breaking changes in pv.UniformGrid constructor
+    #   return cls(dimensions=dims, spacing=cell_size, origin=origin)
+    # else:
+    #   return cls(dims, cell_size, origin)
+    return cls.cls_init(dims, cell_size, origin)
   
   @classmethod
   def from_bb_schema(cls, bb, schema, ndim = 3):
     bearing = 0
-    s = schema.split(';')
+    offset = 0
+    s = re.split('[;~]', schema)
+
+    cell_size = np.asfarray(re.split('[,_]', s[0]))
     if len(s) > 1:
-      bearing = float(s[1])
-    cell_size = np.asarray(s[0].split(','), dtype=np.float_)
+      offset = np.asfarray(re.split('[,_]', s[1]))
+    if len(s) > 2:
+      bearing = float(s[2])
     if len(cell_size) < 3:
       cell_size = np.resize(cell_size, 3)
-    
+
+    bb_r = np.copy(bb)
     if bearing != 0:
-      mesh = pv.PolyData(bb)
-      mesh.rotate_z(bearing, mesh.center)
-    
-      mesh_bb = np.transpose(np.reshape(mesh.bounds, (3,2)))
+      # convert bb to polygon
+      mesh = pv.PolyData(bb).outline()
+      # affine transform the bb to the rotated system
+      mesh_rotate_0261(mesh, bearing * -1, bb[0])
+      mesh = mesh.outline()
+      # store the projection of the rotated bb
+      bb_r = np.transpose(np.reshape(mesh.bounds, (3,2)))
 
-      bb[0] = np.min([bb[0], mesh_bb[0]], 0)
-      bb[1] = np.max([bb[1], mesh_bb[1]], 0)
+    if offset != 0:
+      bb_r[0] = np.add(bb_r[0], np.multiply(cell_size, offset))
+      bb_r[1] = np.add(bb_r[1], np.multiply(cell_size, offset))
 
-      self = cls.from_bb(bb, cell_size, ndim)
-      self = vtk_VoxelSG(self.cast_to_structured_grid())
-      self.rotate_z(bearing, mesh.center)
-      return self
-    else:
-      return cls.from_bb(bb, cell_size, ndim)
+    # create the unrotated grid
+    self = cls.from_bb(bb_r, cell_size, ndim)
+
+    # rotate the grid around the original origin to maintain consistency even if cell sizes change
+    self = self.rotate_z_origin(bearing, bb[0])
+
+    return self
 
   @classmethod
   def from_mesh(cls, mesh, cell_size = 10, ndim = 3):
@@ -606,6 +620,7 @@ class vtk_Voxel_(object):
   @classmethod
   def from_df(cls, df, cell_size = None, xyz = None, variables = None):
     if xyz is None:
+      from _gui import pd_detect_xyz
       xyz = pd_detect_xyz(df)
     if cell_size is None:
       cell_size = pd_detect_cell_size(df, xyz)
@@ -618,7 +633,7 @@ class vtk_Voxel_(object):
     origin = np.subtract(bb0.values, cell_size * 0.5)
 
     log("autodetect origin: %.2f,%.2f,%.2f" % tuple(origin))
-    self = cls(dims.astype(np.int_).tolist(), cell_size, origin)
+    self = cls.cls_init(dims=dims.astype(np.int_).tolist(), spacing=cell_size, origin=origin)
     if variables is None:
       variables = set(df.columns).difference(xyz)
     self.add_arrays_from_df(df, xyz, variables)
@@ -655,6 +670,7 @@ class vtk_Voxel_(object):
   @classmethod
   def from_rr(cls, df, cell_size = None, xyz = None, variables = None):
     ''' from automatic rotated rectangle '''
+    from _gui import pd_detect_xyz, pd_detect_rr, getRectangleSchema
     if xyz is None:
       xyz = pd_detect_xyz(df)
     if cell_size is None:
@@ -663,9 +679,8 @@ class vtk_Voxel_(object):
     origin2d, dims2d, bearing = getRectangleSchema(rr, cell_size)
     origin = np.append(origin2d, df[xyz[2]].min())
     dims = np.append(dims2d, np.ceil(np.abs(np.subtract(df[xyz[2]].max(), df[xyz[2]].min()) / cell_size[2])))
-    self = cls(dims.astype(np.int_).tolist(), cell_size, origin)
-    print(bearing)
-    bearing = 0
+    self = cls.cls_init(dims=dims.astype(np.int_).tolist(), spacing=cell_size, origin=origin)
+    #bearing = 0
     if bearing:
       self = vtk_VoxelSG(self.cast_to_structured_grid())
       self.rotate_z(bearing, origin)
@@ -686,7 +701,6 @@ class vtk_Voxel_(object):
         return cls.from_df(df)
     else:
       return cls.from_file_vtk(fp)
-
 
   @property
   def shape(self):
@@ -764,9 +778,9 @@ class vtk_Voxel_(object):
     cv = []
     #np.ndarray(grid.GetNumberOfCells(), dtype=[np.object_, np.float_, np.float_, np.float_, np.float_, np.int_][['name', 'integer', '***', 'float', 'double', 'bool'].index(bm.field_type(v))]) for v in variables]
     for i in range(len(variables)):
-      j = ['name', 'integer', 'bool', '***', 'float', 'double'].index(bm.field_type(variables[i]))
-      t = [np.object_, np.int_, np.int_, np.float_, np.float_, np.float_][j]
-      n = ['', -1, -1, np.nan, np.nan, np.nan][j]
+      j = ['name', 'integer', 'bool', 'byte', '***', 'float', 'double'].index(bm.field_type(variables[i]))
+      t = [np.object_, np.int_, np.int_, np.int_, np.float_, np.float_, np.float_][j]
+      n = ['', -1, -1, -1, np.nan, np.nan, np.nan][j]
       cv.append(np.full(self.GetNumberOfCells(), n, dtype=t))
 
     bl = None
@@ -796,7 +810,7 @@ class vtk_Voxel_(object):
               cv[i][cellId] = v
 
     for i in range(len(variables)):
-      self.cell_arrays[variables[i]] = cv[i]
+      self.cell_data[variables[i]] = cv[i]
 
     return self
 
@@ -811,9 +825,14 @@ class vtk_Voxel_(object):
       r = self.get_array(array_name).reshape(shape)
     return r
 
-  def heatmap2d(self, array_name, axis = 2, op = 'mean'):
+  def heatmap2d(self, array_name, axis = 2, op = None):
     g3d = self.ijk_array(array_name)
     g2d = None
+    if op is None:
+      if g3d.dtype.num >= 17:
+        op = 'major'
+      else:
+        op = 'mean'
     if op == 'mean':
       # simple mean
       g2d = np.add.reduce(g3d, axis) / g3d.shape[axis]
@@ -992,15 +1011,6 @@ def gltf_to_vtk(gltf):
   import skimage.io
   from io import BytesIO
   meshes = []
-  # print(gltf.scenes)
-  # print(gltf.nodes)
-  # print(gltf.meshes)
-  # print(gltf.accessors)
-  # print(gltf.buffers)
-  # print(gltf.bufferViews)
-  # print(gltf.materials)
-  # print(gltf.textures)
-  # print(gltf.images)
   bb = gltf.binary_blob()
   for m in gltf.meshes:
     for p in m.primitives:
@@ -1037,7 +1047,6 @@ def vtk_grid_to_mesh(grid, array_name = None, slices = 10):
   vtk_array_string_to_index(grid)
   if array_name is None:
     array_name = grid.active_scalars_name
-  print("array_name", array_name)
 
   meshes = []
   if not array_name:
@@ -1059,14 +1068,22 @@ def vtk_meshes_to_obj(meshes):
   od = {"v": [], "f": [], "l": [], "vt": []}
 
   for mesh in meshes:
-    od['f'].extend(np.add(len(od['v']), vtk_cells_to_faces(mesh.faces)))
+    c = None
+    if hasattr(mesh, 'faces'):
+      c = mesh.faces
+    if hasattr(mesh, 'cells'):
+      c = mesh.cells
+
+    od['f'].extend(np.add(len(od['v']), vtk_cells_to_faces(c)))
     od['v'].extend(mesh.points)
-    if mesh.t_coords is not None:
+    if hasattr(mesh, 't_coords') and mesh.t_coords is not None:
       od['vt'].extend(mesh.t_coords)
 
   return od
 
 def vtk_meshes_bb(meshes, buffer = None):
+  if not isinstance(meshes, list):
+    meshes = [meshes]
   bounds0 = None
   bounds1 = None
   for mesh in meshes:
@@ -1082,6 +1099,20 @@ def vtk_meshes_bb(meshes, buffer = None):
     bounds1 = np.add(bounds1, buffer)
 
   return np.stack([bounds0, bounds1])
+
+def vtk_grid_flag_ijk(grid, flag_var = None):
+  if not flag_var:
+    flag_var = ijk
+  # generate basic positional indices, reversed
+  ijk = np.transpose(np.indices(grid.dimensions), np.arange(3,-1,-1))
+  # apply a integer dimension to enable the next step
+  ijk = np.multiply(ijk, np.power(10, np.arange(0,9,3)))
+  # convert 3 indices into a single integer value xxxyyyzzz
+  ijk = np.add.reduce(ijk, 3)
+
+  grid.point_data[flag_var] = ijk.flat
+
+  return grid
 
 class Raytracer(object):
   flag_cell = False
@@ -1108,7 +1139,7 @@ class Raytracer(object):
       p1[2] = max(bounds[4], bounds[5]) + 1
       # check if the line hits the mesh anywhere
       ip, ic = mesh.ray_trace(p0, p1)
-      #print(p0, p1, ip.size, ic.size)
+      
       if ic.size:
         self.value[i] = v
 
@@ -1137,12 +1168,9 @@ class Raytracer(object):
 
 if __name__=="__main__":
   pass
-  #mesh = pv_read('std_voxel.csv')
-  #print(mesh)
-  df = pd.read_csv('std_voxel_r30.csv')
-  mesh = vtk_Voxel.from_rr(df)
+  #mesh = pv.read('std_voxel_0.vtk')
+  mesh = pv.UniformGrid((31, 21, 21), (50, 50, 50), (0,0,0))
   print(mesh)
-  # ,vtk_df_to_mesh(df)
-  vtk_plot_meshes(mesh)
+  mesh.save('output.vtk', False)
 
   

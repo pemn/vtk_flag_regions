@@ -3,7 +3,7 @@
 # v1.1 2021/01 paulo.ernesto
 # v1.0 2021/01 paulo.ernesto
 '''
-usage: $0 block_model*vtk,csv,xlsx regions#region*vtk,dxf,dwg,msh,obj,00t flag_var=region flag2d@ output*vtk display@
+usage: $0 block_model*vtk,csv,xlsx regions#region*vtk,dxf,dwg,msh,obj,00t flag_var=region mode%flag3d,flag2d output*vtk display@
 '''
 import sys, os.path
 import numpy as np
@@ -17,8 +17,6 @@ from _gui import usage_gui, commalist, pyd_zip_extract, pd_load_dataframe, pd_sa
 pyd_zip_extract()
 
 from pd_vtk import pv_read, vtk_dmbm_to_ug, vtk_df_to_mesh, vtk_mesh_to_df, vtk_cells_to_flat, vtk_plot_meshes, vtk_nf_to_mesh, vtk_meshes_bb, vtk_Voxel, pv_save, Raytracer
-
-
 
 def vtk_flag_region_2d(grid, meshes, flag_var, flag_cell = False, values = None):
   rt = Raytracer(grid, flag_cell)
@@ -59,14 +57,14 @@ def vtk_flag_region(grid, meshes, flag_var, flag_cell = False, values = None):
       rc = r.get_array('SelectedPoints')
     cv[rc > 0] = v
   if flag_cell:
-    grid.cell_arrays[flag_var] = cv
+    grid.cell_data[flag_var] = cv
   else:
-    grid.point_arrays[flag_var] = cv
-  #grid.set_active_scalars(flag_var)
+    grid.point_data[flag_var] = cv
+
   return grid
 
 
-def main(block_model, regions, flag_var, flag_2d, output, display):
+def vtk_flag_regions(block_model, regions, flag_var, mode, output, display):
   meshes = []
   values = []
   for region in commalist().parse(regions).split():
@@ -81,9 +79,10 @@ def main(block_model, regions, flag_var, flag_2d, output, display):
 
   grid = None
 
-  if re.match(r'[\d,;]*', block_model):
+  if re.fullmatch(r'[\d\.\-,;_~]+', block_model):
     bb = vtk_meshes_bb(meshes)
     grid = vtk_Voxel.from_bb_schema(bb, block_model)
+    grid.cells_volume('volume')
   elif re.search(r'vt.$', block_model, re.IGNORECASE):
     grid = pv_read(block_model)
   else:
@@ -94,10 +93,11 @@ def main(block_model, regions, flag_var, flag_2d, output, display):
     else:
       grid = vtk_df_to_mesh(bdf)
 
+  if len(grid.cell_data) == 0 and len(grid.point_data) > 0 and grid.n_points:
+    grid = grid.ptc()
   flag_cell = True
-
-  if len(meshes):
-    if int(flag_2d):
+  if len(meshes) and flag_var:
+    if mode == 'flag2d':
       log("flag2d")
       vtk_flag_region_2d(grid, meshes, flag_var, flag_cell, values)
     else:
@@ -106,9 +106,13 @@ def main(block_model, regions, flag_var, flag_2d, output, display):
 
   if output:
     pv_save(grid, output)
+  else:
+    print(vtk_mesh_to_df(grid))
 
   if int(display):
-    vtk_plot_meshes(meshes + [grid])
+    vtk_plot_meshes([grid] + meshes, scalars=flag_var)
+
+main = vtk_flag_regions
 
 if __name__=="__main__":
   usage_gui(__doc__)
