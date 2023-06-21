@@ -1,6 +1,7 @@
 ## 📌 Description
 flag solid regions in a block model. export points inside solids.  
 Does not require vulcan or any other proprietary software.  
+Also allows creation of simple litho block models.
 ## 📸 Screenshot
 ![screenshot1](https://github.com/pemn/assets/blob/main/vtk_flag_regions1.png?raw=true)  
 ## 📝 Parameters
